@@ -63,7 +63,7 @@ customDomains: []
 #   enabled: true
 
 permissions:
-  owner: ""  # required: your-username (without @withpersona.com)
+  owner: michael.yang
   # additionalCollaborators:
   #   - username
 
