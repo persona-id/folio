@@ -1,0 +1,117 @@
+# App-specific overrides for frontier-app-base chart
+# See https://github.com/persona-id/persona-frontier-base/tree/main/chart for all available options
+
+# Custom domains the application will also be accessible on.
+# This is a list of fully qualified domain names (FQDNs) that
+# the application will be accessible on in addition to the
+# auto-generated domain name. This will make the application
+# publicly accessible even if public access is not enabled.
+# Currently, we only support records in `*.withpersona.app`.
+# This uses the knative custom domains feature.
+# https://knative.dev/docs/serving/services/custom-domains
+#
+# Note: The application needs to be granted access to use the
+# custom domain name in the persona-kubernetes repo. As an
+# example see https://github.com/persona-id/persona-kubernetes/pull/17289/changes#diff-b323be6a55593c703ffbbbd6088b34681812dc7f5e7dff0e1fe91bd078478e47R40.
+# The fqdn needs to be listed in `environments/knative-serving/main.jsonnet`.
+customDomains: []
+  # - fqdn: foo.withpersona.app
+
+# Google cloud storage bucket (object storage)
+# This is a list of gcs buckets to create for a frontier application and their
+# associated configurations. All buckets will have a fully managed policy and
+# must be configured with this chart. Frontier application access will be granted
+# using workload identity federation. Buckets and the attached IAM policy are
+# managed using gcp config connector. The permissions assigned to the bucket
+# are authoritative. This will create an IAM policy attached to the bucket this
+# means all permissions must be assigned by the chart. Any clickops changes to
+# permissions in the gcp console will be replaced by the permissions on the k8s
+# IAMPolicy resource. Permissions are also granted at the bucket level rather
+# than at a project level. This ensures access is scoped correctly.
+# https://docs.cloud.google.com/config-connector/docs/overview
+# https://docs.cloud.google.com/config-connector/docs/reference/resource-docs/storage/storagebucket
+# gcsStorageBuckets:
+#     # name of the gcs bucket. This will be prefixed with "persona-frontier-"
+#   - name: foo-bucket
+#     # Inherit or enforce public access prevention. If set to "inherited", the
+#     # configuration is defined by the organization policy. If "enforced", public
+#     # access is prevented.
+#     preventPublicAccess: enforced
+#     # Additional iam role permissions to assign to users, groups, and service
+#     # accounts. Members of the role use the gcp standard prefix for specifying
+#     # types of accounts. This is optional.
+#     # https://docs.cloud.google.com/iam/docs/roles-permissions/storage
+#     # https://docs.cloud.google.com/config-connector/docs/reference/resource-docs/iam/iampolicy
+#     additionalPermissions:
+#       "roles/storage.objectUser":
+#         - "user:foo@example.com"
+#         - "group:bar@withpersona.com"
+#       "roles/storage.objectAdmin":
+#         - "user:example@withpersona.com"
+#     # Role to assign to the frontier application service account. This is the iam permission
+#     # the application will have for the gcs bucket. This uses gcp gke workload
+#     # identity of the kubernetes service account to access the gcs bucket. No
+#     # static keys are necessary.
+#     # https://docs.cloud.google.com/kubernetes-engine/docs/concepts/workload-identity#kubernetes-resources-iam-policies
+#     appPermissions: roles/storage.objectUser
+#     # Enable or disable bucket object versioning.
+#     versioningEnabled: true
+
+# Per-app MongoDB on Frontier's shared Atlas cluster.
+# Injects MONGODB_URI (sensitive) + MONGODB_DB_NAME into app container.
+# mongo:
+#   enabled: true
+
+permissions:
+  owner: ""  # required: your-username (without @withpersona.com)
+  # additionalCollaborators:
+  #   - username
+
+# 1Password secrets configuration
+# secrets:
+#   sources:
+#     onePassword:
+#       # Items to sync from 1Password (uses default Frontier Secrets vault)
+#       items:
+#         - name: my-secret
+#
+#   # Environment variables from secrets
+#   envVars:
+#     - name: MY_SECRET_VALUE
+#       secretKey: password
+#       fromSecretName: my-secret
+#
+#   # Mount secrets as files
+#   mounts:
+#     - path: "/secrets/my-secret"
+#       fromSecretName: my-secret
+
+# Sealed secrets (encrypted; safe to commit) are written by `bin/create-secret`
+# into per-env files: deploy/secrets.dev.yaml / deploy/secrets.prod.yaml.
+
+# Valkey key-value store. When enabled, provisions a dedicated in-cluster Valkey instance and injects
+# REDIS_URL=redis://valkey:6379 and VALKEY_URL=redis://valkey:6379 automatically.
+# Full reference: https://github.com/valkey-io/valkey-helm/tree/main/valkey
+#
+# valkey:
+#   enabled: true
+#   # Optional Configuration:
+#   dataStorage:
+#     requestedSize: 2Gi    # default: 1Gi
+#   resources:
+#     requests:
+#       cpu: 100m           # default: 100m
+#       memory: 256Mi       # default: 256Mi
+#     limits:
+#       memory: 512Mi       # default: 350Mi
+#   replica:
+#     enabled: true         # default: false — when false, each deploy causes ~20-30s downtime while valkey is recreated; enable for HA with no downtime
+#     replicas: 1           # default: 1 — number of replicas (total pods = replicas + 1 primary)
+#     persistence:
+#       size: 1Gi           # required when replica.enabled is true
+#   valkeyConfig: |
+#     # default: 200mb
+#     maxmemory 400mb
+#     maxmemory-policy allkeys-lru
+
+visibility: private  # private for vpn only; public for open internet

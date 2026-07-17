@@ -1,0 +1,42 @@
+name: Deploy to Frontier
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+    inputs:
+      action:
+        description: 'Action to perform'
+        required: true
+        default: 'deploy'
+        type: choice
+        options:
+          - deploy
+          - delete
+
+permissions:
+  contents: read
+  id-token: write
+  packages: write
+
+jobs:
+  deploy:
+    if: github.repository != 'persona-id/persona-template-frontier-app' && (github.event_name == 'push' || github.event.inputs.action == 'deploy')
+    uses: ./.github/workflows/_deploy.yaml
+    with:
+      make_target: deploy-prod
+      environment: production
+      url: https://app-frontier-${{ github.event.repository.name }}-prod.private.frontier.withpersona.app
+      status_namespace: frontier-${{ github.event.repository.name }}-prod
+    secrets: inherit
+
+  delete:
+    if: github.repository != 'persona-id/persona-template-frontier-app' && github.event.inputs.action == 'delete'
+    uses: ./.github/workflows/_deploy.yaml
+    with:
+      make_target: prod-delete
+      environment: production
+      url: https://app-frontier-${{ github.event.repository.name }}-prod.private.frontier.withpersona.app
+      status_namespace: frontier-${{ github.event.repository.name }}-prod
+    secrets: inherit

@@ -1,0 +1,30 @@
+name: Deploy to Dev
+
+on:
+  push:
+    branches:
+      - frontier-dev
+  workflow_dispatch:
+    inputs:
+      ref:
+        description: 'Branch or SHA to deploy to dev'
+        required: false
+        default: 'frontier-dev'
+        type: string
+
+permissions:
+  contents: read
+  id-token: write
+  packages: write
+
+jobs:
+  deploy-dev:
+    if: github.repository != 'persona-id/persona-template-frontier-app'
+    uses: ./.github/workflows/_deploy.yaml
+    with:
+      make_target: deploy-dev
+      ref: ${{ github.event.inputs.ref || github.ref }}
+      environment: dev
+      url: https://app-frontier-${{ github.event.repository.name }}-dev.private.frontier.withpersona.app
+      status_namespace: frontier-${{ github.event.repository.name }}-dev
+    secrets: inherit

@@ -1,0 +1,127 @@
+apiVersion: skaffold/v4beta13
+kind: Config
+metadata:
+  name: frontier-app
+
+# common shared configurations
+# Setup remote kaniko builds
+.build_remote: &build_remote
+  cluster:
+    dockerConfig:
+      secretName: image-builder-secret
+    namespace: image-builder
+  artifacts:
+    - image: ghcr.io/persona-id/${APP_NAME}
+      kaniko:
+        cache:
+          repo: ghcr.io/persona-id/${APP_NAME}/cache
+
+.patches_prod: &patches_prod
+  - op: replace
+    path: /deploy/helm/releases/0/name
+    value: "bootstrap-${APP_NAME}-prod"
+  - op: replace
+    path: /deploy/helm/releases/0/setValueTemplates/appName
+    value: "${APP_NAME}-prod"
+  - op: replace
+    path: /deploy/helm/releases/1/dependsOn/0
+    value: "bootstrap-${APP_NAME}-prod"
+  - op: replace
+    path: /deploy/helm/releases/1/namespace
+    value: "frontier-${APP_NAME}-prod"
+  - op: replace
+    path: /deploy/helm/releases/1/setValueTemplates/appName
+    value: "${APP_NAME}-prod"
+  # Prod deploy reads the prod-sealed secrets instead of the dev ones.
+  - op: replace
+    path: /deploy/helm/releases/1/valuesFiles
+    value:
+      - deploy/values.yaml
+      - deploy/secrets.prod.yaml
+
+# Shared, stable dev namespace (frontier-<app>-dev) — used by the one-shot
+# deploy-dev path (CI / instant-dev / UI). No username, no DEV_SUFFIX, so
+# sealed secrets can be strict-scoped to it.
+.patches_dev: &patches_dev
+  - op: replace
+    path: /deploy/helm/releases/0/name
+    value: "bootstrap-${APP_NAME}-dev"
+  - op: replace
+    path: /deploy/helm/releases/0/setValueTemplates/appName
+    value: "${APP_NAME}-dev"
+  - op: replace
+    path: /deploy/helm/releases/1/dependsOn/0
+    value: "bootstrap-${APP_NAME}-dev"
+  - op: replace
+    path: /deploy/helm/releases/1/namespace
+    value: "frontier-${APP_NAME}-dev"
+  - op: replace
+    path: /deploy/helm/releases/1/setValueTemplates/appName
+    value: "${APP_NAME}-dev"
+
+build:
+  local:
+    useBuildkit: true
+  # Use content-based tags so each rebuild gets a unique tag
+  tagPolicy:
+    inputDigest: {}
+  artifacts:
+    # Image name is set via envsubst at runtime (see Makefile)
+    # APP_NAME defaults to the repository/directory name
+    - image: ghcr.io/persona-id/${APP_NAME}
+
+deploy:
+  statusCheck: false
+  kubeContext: frontier-us-central1-k8s-api.withpersona.ts.net
+  helm:
+    releases:
+      - name: "bootstrap-${APP_NAME}-dev${DEV_SUFFIX}"
+        remoteChart: oci://ghcr.io/persona-id/charts/frontier-app-bootstrap
+        version: "1.0.0"
+        namespace: frontier-system
+        createNamespace: false
+        upgradeOnChange: true
+        # Helm 4: kstatus waits for Frontier CR Ready condition (deterministic).
+        # Helm 3: --wait has no effect on custom resources (skips unknown types).
+        # In practice kro finishes fast enough that dependsOn alone is sufficient.
+        wait: true
+        valuesFiles:
+          - deploy/values.yaml
+        setValueTemplates:
+          appName: "${APP_NAME}-dev${DEV_SUFFIX}"
+      - name: app
+        dependsOn:
+          - "bootstrap-${APP_NAME}-dev${DEV_SUFFIX}"
+        remoteChart: oci://ghcr.io/persona-id/charts/frontier-app-base
+        version: "1.0.0"
+        namespace: "frontier-${APP_NAME}-dev${DEV_SUFFIX}"
+        createNamespace: false
+        upgradeOnChange: true
+        valuesFiles:
+          - deploy/values.yaml
+          - deploy/secrets.dev.yaml
+        setValueTemplates:
+          appName: "${APP_NAME}-dev${DEV_SUFFIX}"
+          image.repository: "{{.IMAGE_REPO}}"
+          image.tag: "{{.IMAGE_TAG}}"
+
+profiles:
+  # One-shot deploy to the shared dev namespace (frontier-<app>-dev).
+  - name: dev
+    patches:
+      *patches_dev
+
+  # Remote in-cluster builds (no local Docker required)
+  - name: dev-remote-build
+    build: *build_remote
+
+  # Production deployment into <app_name>-prod namespace
+  - name: prod
+    patches:
+      *patches_prod
+
+  # Production deployment using remote builds
+  - name: prod-remote-build
+    build: *build_remote
+    patches:
+      *patches_prod
