@@ -28,5 +28,5 @@
 #   CMD ["node", "server.js"]
 
 # Placeholder - replace with your application
-FROM stefanprodan/podinfo:6.14.0
+FROM stefanprodan/podinfo:6.14.1
 CMD ["./podinfo", "--port", "8080"]
