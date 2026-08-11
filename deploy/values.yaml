@@ -114,4 +114,4 @@ permissions:
 #     maxmemory 400mb
 #     maxmemory-policy allkeys-lru
 
-visibility: private  # private for vpn only; public for open internet
+visibility: public  # private for vpn only; public for open internet
