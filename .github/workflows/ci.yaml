@@ -22,3 +22,74 @@ jobs:
       - name: Build Docker image
         if: steps.check-dockerfile.outputs.exists == 'true'
         run: docker build -t ${{ github.event.repository.name }}:ci .
+  # Replace the deploy-contract step with your application's test suite when you
+  # have one, or add your own steps alongside it. Do not delete the job: `test` is
+  # a required status check, and Dependabot automerge treats the required checks
+  # as its only gate, so a repo without it merges dependency bumps unverified.
+  test:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+
+      # Asserts the contract the chart and the deploy pipeline rely on. A broken
+      # values.yaml fails here rather than halfway through a prod deploy.
+      - name: Deploy contract
+        env:
+          # owner is empty in the template itself and filled in at generation
+          # time, so the non-empty assertion is skipped only here.
+          IS_TEMPLATE: ${{ github.repository == 'persona-id/persona-template-frontier-app' }}
+        run: |
+          set -euo pipefail
+          # Do not assume the runner image ships PyYAML. Installing it when absent
+          # is cheaper than a confusing ModuleNotFoundError on a required check.
+          python3 -c 'import yaml' 2>/dev/null \
+            || pip install --quiet --break-system-packages pyyaml
+
+          python3 - <<'PY'
+          import os
+          import sys
+
+          import yaml
+
+          failures = []
+
+          def load(path):
+              try:
+                  with open(path) as fh:
+                      return yaml.safe_load(fh)
+              except FileNotFoundError:
+                  failures.append(f"{path} is missing")
+              except yaml.YAMLError as exc:
+                  failures.append(f"{path} is not valid YAML: {exc}")
+              return None
+
+          values = load("deploy/values.yaml")
+          load("skaffold.yaml")
+
+          if not os.path.exists("Dockerfile"):
+              failures.append("Dockerfile is missing")
+
+          if isinstance(values, dict):
+              visibility = values.get("visibility")
+              if visibility not in ("private", "public"):
+                  failures.append(
+                      f"deploy/values.yaml visibility must be private or public, got {visibility!r}"
+                  )
+
+              permissions = values.get("permissions")
+              if not isinstance(permissions, dict) or "owner" not in permissions:
+                  failures.append("deploy/values.yaml is missing permissions.owner")
+              elif os.environ.get("IS_TEMPLATE") != "true":
+                  owner = permissions.get("owner")
+                  if not (isinstance(owner, str) and owner.strip()):
+                      failures.append(
+                          "deploy/values.yaml permissions.owner is empty; set it to the owning group"
+                      )
+          elif values is not None:
+              failures.append("deploy/values.yaml did not parse to a mapping")
+
+          for failure in failures:
+              print(f"FAIL: {failure}", file=sys.stderr)
+          sys.exit(1 if failures else 0)
+          PY
